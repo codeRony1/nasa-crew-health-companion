@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#070c16">
+  <title>Crew Health Companion | NASA Space Apps Challenge</title>
+  <meta name="description" content="Astronaut self-assessment visual health & biometric decision support companion for long-duration spaceflight.">
+  
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="space-theme">
+  <!-- Fixed decorative space scene; all descendants ignore pointer input. -->
+  <div id="space-background" aria-hidden="true">
+    <div class="space-nebula nebula-violet"></div>
+    <div class="space-nebula nebula-blue"></div>
+    <div class="space-nebula nebula-magenta"></div>
+    <canvas id="starfield"></canvas>
+    <div class="space-planet planet-earth">
+      <div class="planet-clouds"></div>
+      <div class="planet-night-shade"></div>
+      <div class="planet-atmosphere"></div>
+    </div>
+    <div class="space-planet planet-mars">
+      <div class="mars-surface"></div>
+      <div class="planet-night-shade"></div>
+      <div class="planet-atmosphere"></div>
+    </div>
+    <div class="planet-orbit orbit-earth"></div>
+    <div class="drifting-satellite"><span></span><i></i><b></b></div>
+    <div class="space-vignette"></div>
+  </div>
+
+  <!-- Main Container -->
+  <div class="app-layout">
+    
+    <!-- TOP HEADER & TELEMETRY HUD -->
+    <header class="hud-header">
+      <div class="header-branding">
+        <div class="nasa-insignia">
+          <span class="meatball-glow"></span>
+          <div class="nasa-text">NASA</div>
+          <span class="sub-label">SPACE APPS</span>
+        </div>
+        <div class="header-title-block">
+          <h1>CREW HEALTH COMPANION</h1>
+          <p class="tagline">Autonomous Astronaut Health Self-Assessment & Biometric Decision Support</p>
+        </div>
+      </div>
+
+      <!-- Center HUD: Crew Readiness Score Radial -->
+      <div class="readiness-hud-container" title="Composite readiness computed dynamically only from logged body systems">
+        <div class="readiness-radial">
+          <svg viewBox="0 0 100 100" class="gauge-svg">
+            <circle class="gauge-track" cx="50" cy="50" r="42" />
+            <circle class="gauge-fill" id="readiness-gauge-bar" cx="50" cy="50" r="42" />
+          </svg>
+          <div class="gauge-center">
+            <span class="score-number" id="readiness-score-val">--</span>
+            <span class="score-unit" id="readiness-score-unit">/100</span>
+          </div>
+        </div>
+        <div class="readiness-meta">
+          <span class="readiness-title">CREW READINESS</span>
+          <span class="readiness-status-badge" id="readiness-badge">NOT ENOUGH DATA</span>
+          <span class="readiness-sub" id="readiness-subtext">Click a body part to start your check-up.</span>
+        </div>
+      </div>
+
+      <!-- Right HUD: Gamification & Mission Data Controls -->
+      <div class="header-telemetry-controls">
+        <div class="gamification-hud">
+          <div class="stat-pill streak-pill" title="Daily check-in streak">
+            <span class="pill-icon">🔥</span>
+            <div class="stat-info">
+              <span class="stat-label">STREAK</span>
+              <span class="stat-value" id="streak-counter">0 Days</span>
+            </div>
+          </div>
+          <div class="stat-pill xp-pill" id="xp-trigger" title="Earn XP by entering real biometric measurements">
+            <span class="pill-icon">⭐</span>
+            <div class="stat-info">
+              <span class="stat-label" id="crew-rank">RANK: ASC</span>
+              <span class="stat-value" id="xp-counter">0 XP</span>
+            </div>
+          </div>
+          <button class="hud-btn badge-btn" id="open-badges-btn" title="View unlocked astronaut mission badges">
+            🏅 <span class="badge-count" id="unlocked-badge-count">0</span> Badges
+          </button>
+        </div>
+
+        <!-- Controls: Export, Clear, Presentation Demo -->
+        <div class="mission-clock-block">
+          <div class="data-management-buttons">
+            <button class="btn-micro" id="export-data-btn" title="Export all logged data as JSON file">
+              📥 Export Data
+            </button>
+            <button class="btn-micro btn-danger" id="clear-data-btn" title="Permanently delete all measurements">
+              🗑️ Clear All
+            </button>
+            <button class="btn-micro btn-demo" id="load-demo-btn" title="Load sample dataset for demonstration only">
+              🧪 Load Demo
+            </button>
+          </div>
+          <div class="met-counter">
+            <span class="met-prefix">MET</span>
+            <span class="met-digits" id="met-clock">001:08:14:22</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- MISSION ENVIRONMENT & COMM STATUS BAR -->
+    <section class="mission-env-bar">
+      <div class="env-selector-group">
+        <span class="env-label">MISSION ENVIRONMENT:</span>
+        <div class="env-buttons" role="radiogroup" aria-label="Select Mission Environment">
+          <button class="env-btn active" data-env="iss">
+            <span class="env-icon">🛰️</span> ISS (LEO)
+          </button>
+          <button class="env-btn" data-env="spacecraft">
+            <span class="env-icon">🚀</span> Transit Orion
+          </button>
+          <button class="env-btn" data-env="lunar">
+            <span class="env-icon">🌕</span> Lunar Base
+          </button>
+          <button class="env-btn" data-env="mars">
+            <span class="env-icon">🪐</span> Mars Habitat
+          </button>
+        </div>
+      </div>
+
+      <div class="env-telemetry-feed" id="env-telemetry-feed">
+        <span class="feed-item"><strong id="env-gravity-label">Gravity:</strong> <span id="env-gravity-val">0.00 g (Microgravity)</span></span>
+        <span class="feed-divider">|</span>
+        <span class="feed-item"><strong id="env-comm-label">Comm Latency:</strong> <span id="env-comm-val" class="highlight-cyan">0.8s (Real-time voice)</span></span>
+        <span class="feed-divider">|</span>
+        <span class="feed-item"><strong>Primary Hazard Focus:</strong> <span id="env-hazard-val">Microgravity fluid shift & ECLSS CO2</span></span>
+      </div>
+    </section>
+
+    <!-- DAILY CHECK-IN REMINDER BANNER (24-Hour Evaluation) -->
+    <section class="checkin-banner" id="checkin-banner">
+      <div class="banner-content">
+        <div class="banner-icon-pulse" id="banner-icon">📋</div>
+        <div class="banner-text">
+          <h3 id="banner-title">Crew Health Survey</h3>
+          <p id="banner-message">No health readings recorded yet. Tap any body part to begin your initial baseline measurement.</p>
+        </div>
+      </div>
+      <div class="banner-chips" id="banner-unlogged-chips">
+        <!-- Incomplete body region quick pills injected dynamically -->
+      </div>
+    </section>
+
+    <!-- MAIN COCKPIT: INTERACTIVE BODY VISUALIZER & SYSTEM GRID -->
+    <main class="cockpit-grid">
+      
+      <!-- LEFT HUD COLUMN: VITAL SYSTEMS OVERVIEW CARDS (TOP 4) -->
+      <aside class="systems-column systems-column-left">
+        <div class="column-title">NEURO & CARDIAC</div>
+        
+        <!-- Region Card: Brain -->
+        <article class="system-summary-card status-nodata" data-region="brain" tabindex="0" role="button" aria-label="Open Brain health system">
+          <div class="card-status-indicator" id="card-dot-brain"></div>
+          <div class="card-main">
+            <div class="card-header">
+              <span class="card-icon">🧠</span>
+              <span class="card-name">Brain & Mood</span>
+              <span class="card-status-pill" id="card-pill-brain">NO DATA</span>
+            </div>
+            <div class="card-vital-values">
+              <div class="vital-item">
+                <span class="v-label">Sleep:</span>
+                <span class="v-val" id="vital-brain-sleep">--</span>
+              </div>
+              <div class="vital-item">
+                <span class="v-label">Mood:</span>
+                <span class="v-val" id="vital-brain-mood">--</span>
+              </div>
+            </div>
+            <div class="card-hazard-tags">
+              <span class="hazard-badge" title="Isolation Hazard">I</span>
+              <span class="hazard-badge" title="Radiation Hazard">R</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Region Card: Eyes -->
+        <article class="system-summary-card status-nodata" data-region="eyes" tabindex="0" role="button" aria-label="Open Eyes & Vision system">
+          <div class="card-status-indicator" id="card-dot-eyes"></div>
+          <div class="card-main">
+            <div class="card-header">
+              <span class="card-icon">👁️</span>
+              <span class="card-name">Eyes (SANS)</span>
+              <span class="card-status-pill" id="card-pill-eyes">NO DATA</span>
+            </div>
+            <div class="card-vital-values">
+              <div class="vital-item">
+                <span class="v-label">Clarity:</span>
+                <span class="v-val" id="vital-eyes-score">--</span>
+              </div>
+              <div class="vital-item">
+                <span class="v-label">Headache:</span>
+                <span class="v-val" id="vital-eyes-headache">--</span>
+              </div>
+            </div>
+            <div class="card-hazard-tags">
+              <span class="hazard-badge" title="Gravity Fields">G</span>
+              <span class="hazard-badge" title="Hostile Environment">E</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Region Card: Heart -->
+        <article class="system-summary-card status-nodata" data-region="heart" tabindex="0" role="button" aria-label="Open Cardiovascular system">
+          <div class="card-status-indicator" id="card-dot-heart"></div>
+          <div class="card-main">
+            <div class="card-header">
+              <span class="card-icon">🫀</span>
+              <span class="card-name">Heart & Vasc</span>
+              <span class="card-status-pill" id="card-pill-heart">NO DATA</span>
+            </div>
+            <div class="card-vital-values">
+              <div class="vital-item">
+                <span class="v-label">Pulse:</span>
+                <span class="v-val" id="vital-heart-hr">--</span>
+              </div>
+              <div class="vital-item">
+                <span class="v-label">BP:</span>
+                <span class="v-val" id="vital-heart-bp">--</span>
+              </div>
+            </div>
+            <div class="card-hazard-tags">
+              <span class="hazard-badge" title="Gravity Fields">G</span>
+              <span class="hazard-badge" title="Radiation Hazard">R</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Region Card: Lungs -->
+        <article class="system-summary-card status-nodata" data-region="lungs" tabindex="0" role="button" aria-label="Open Respiratory system">
+          <div class="card-status-indicator" id="card-dot-lungs"></div>
+          <div class="card-main">
+            <div class="card-header">
+              <span class="card-icon">🫁</span>
+              <span class="card-name">Lungs & SpO2</span>
+              <span class="card-status-pill" id="card-pill-lungs">NO DATA</span>
+            </div>
+            <div class="card-vital-values">
+              <div class="vital-item">
+                <span class="v-label">SpO2:</span>
+                <span class="v-val" id="vital-lungs-spo2">--</span>
+              </div>
+              <div class="vital-item">
+                <span class="v-label">Resp:</span>
+                <span class="v-val" id="vital-lungs-resp">--</span>
+              </div>
+            </div>
+            <div class="card-hazard-tags">
+              <span class="hazard-badge" title="Hostile Closed Environment">E</span>
+              <span class="hazard-badge" title="Gravity Fields">G</span>
+            </div>
+          </div>
+        </article>
+      </aside>
+
+      <!-- CENTER STAGE: MEDICAL-GRADE ANATOMICAL VISUALIZER -->
+      <section class="body-stage-container">
+        
+        <!-- Viewer HUD Toolbar: Anatomical Layer Controls -->
+        <div class="viewer-toolbar">
+          <div class="anatomy-layer-toggle" role="tablist" aria-label="Anatomical Layer Selector">
+            <span class="toolbar-label">LAYER:</span>
+            <button class="layer-pill active" data-layer="all">All Layers</button>
+            <button class="layer-pill" data-layer="skin">Skin</button>
+            <button class="layer-pill" data-layer="muscle">Muscle</button>
+            <button class="layer-pill" data-layer="skeleton">Skeleton</button>
+            <button class="layer-pill" data-layer="organs">Organs</button>
+          </div>
+
+          <div class="viewer-reset-control">
+            <button class="btn-micro" id="btn-reset-zoom" title="Reset anatomical zoom level">
+              🔍 Reset View
+            </button>
+          </div>
+        </div>
+
+        <!-- SVG Viewport with Holographic Medical Grid & Scanline -->
+        <div class="svg-viewport-wrapper" id="svg-viewport-wrapper">
+          <div class="scanner-sweep-line" aria-hidden="true"></div>
+          <div id="body-tooltip" class="body-tooltip" aria-hidden="true"></div>
+          
+          <!-- Realistic, 1:7.5 Proportion Clinical Holographic SVG -->
+          <svg id="human-body-svg" viewBox="0 0 540 960" class="human-body-svg medical-scan" aria-label="Neon Holographic Clinical Anatomy Model">
+  <defs>
+    <!-- Holographic Glow Filters -->
+    <filter id="glow-cyan" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="glow-magenta" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5" result="blur" />
+      <feColorMatrix type="matrix" values="1 0 0 0 1  0 0.1 0 0 0.2  0 0 0.8 0 0.6  0 0 0 1 0" result="pinkglow"/>
+      <feMerge>
+        <feMergeNode in="pinkglow" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="glow-violet" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5" result="blur" />
+      <feColorMatrix type="matrix" values="0.7 0 0 0 0.8  0 0.3 0 0 0.5  1 0 0 0 1  0 0 0 1 0" result="violglow"/>
+      <feMerge>
+        <feMergeNode in="violglow" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="glow-orange" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feColorMatrix type="matrix" values="1 0 0 0 1  0.5 0 0 0 0.5  0 0 0 0 0.1  0 0 0 1 0" result="orgglow"/>
+      <feMerge>
+        <feMergeNode in="orgglow" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Glowing Linear & Radial Gradients -->
+    <linearGradient id="grad-holo-body" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.12" />
+      <stop offset="50%" stop-color="#7000ff" stop-opacity="0.06" />
+      <stop offset="100%" stop-color="#ff007f" stop-opacity="0.1" />
+    </linearGradient>
+
+    <radialGradient id="grad-cardiac-glow" cx="45%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#ff1493" stop-opacity="0.95" />
+      <stop offset="60%" stop-color="#c2185b" stop-opacity="0.55" />
+      <stop offset="100%" stop-color="#4a0020" stop-opacity="0.1" />
+    </radialGradient>
+
+    <radialGradient id="grad-brain-violet" cx="45%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#d1c4e9" stop-opacity="0.95" />
+      <stop offset="50%" stop-color="#7c4dff" stop-opacity="0.65" />
+      <stop offset="100%" stop-color="#311b92" stop-opacity="0.15" />
+    </radialGradient>
+
+    <radialGradient id="grad-lungs-cyan" cx="50%" cy="45%" r="60%">
+      <stop offset="0%" stop-color="#e0f7fa" stop-opacity="0.85" />
+      <stop offset="60%" stop-color="#00e5ff" stop-opacity="0.45" />
+      <stop offset="100%" stop-color="#006064" stop-opacity="0.1" />
+    </radialGradient>
+
+    <radialGradient id="grad-gut-amber" cx="45%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#ffe0b2" stop-opacity="0.9" />
+      <stop offset="60%" stop-color="#ff7043" stop-opacity="0.55" />
+      <stop offset="100%" stop-color="#bf360c" stop-opacity="0.1" />
+    </radialGradient>
+  </defs>
+
+  <!-- ==========================================================
+       HOLOGRAPHIC PERSPECTIVE GRID FLOOR & SCAN COORDINATES
+       ========================================================== -->
+  <g class="hologram-grid-overlay" pointer-events="none">
+    <!-- Perspective Floor Grid Converging Under Feet -->
+    <g class="floor-grid-lines" opacity="0.4">
+      <ellipse cx="270" cy="875" rx="190" ry="32" fill="none" stroke="#00f0ff" stroke-width="1.2" stroke-dasharray="4 6" />
+      <ellipse cx="270" cy="875" rx="130" ry="22" fill="none" stroke="#ff007f" stroke-width="0.9" />
+      <ellipse cx="270" cy="875" rx="70" ry="12" fill="none" stroke="#00f0ff" stroke-width="0.7" />
+      <line x1="80" y1="875" x2="460" y2="875" stroke="#00f0ff" stroke-width="1.2" />
+      <line x1="270" y1="840" x2="160" y2="905" stroke="#7c4dff" stroke-width="0.8" />
+      <line x1="270" y1="840" x2="380" y2="905" stroke="#7c4dff" stroke-width="0.8" />
+      <line x1="270" y1="840" x2="220" y2="907" stroke="#00f0ff" stroke-width="0.6" />
+      <line x1="270" y1="840" x2="320" y2="907" stroke="#00f0ff" stroke-width="0.6" />
+      <!-- Soft Floor Reflection Aura -->
+      <radialGradient id="floor-reflection-glow" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.35" />
+        <stop offset="40%" stop-color="#ff007f" stop-opacity="0.15" />
+        <stop offset="100%" stop-color="#05020c" stop-opacity="0" />
+      </radialGradient>
+      <ellipse cx="270" cy="875" rx="140" ry="24" fill="url(#floor-reflection-glow)" />
+    </g>
+
+    <!-- Vertical Central Datum & Coordinates -->
+    <line x1="270" y1="30" x2="270" y2="865" stroke="#00f0ff" stroke-width="0.8" stroke-dasharray="3 6" opacity="0.3" />
+    <text x="278" y="42" fill="#00f0ff" font-size="8.5" font-family="monospace" opacity="0.7">SAGITTAL AXIS [0.00]</text>
+    <text x="278" y="865" fill="#00f0ff" font-size="8.5" font-family="monospace" opacity="0.7">PODAL BASELINE [1.00g-CAL]</text>
+  </g>
+
+  <!-- ==========================================================
+       FRONT ANTERIOR ANATOMICAL COMPLEX (SLIM A-POSE HUMAN)
+       ========================================================== -->
+  <g>
+
+    <!-- LAYER 1: SKIN SILHOUETTE & 3D CONTOUR WIREFRAME -->
+    <g id="layer-skin" class="anatomy-layer" pointer-events="none">
+      <!-- Outer Body Contour (Slim Athletic A-Pose with Natural Head, Clavicles, Limbs) -->
+      <path class="skin-contour holo-neon-outline" fill="url(#grad-holo-body)" stroke="#00f0ff" stroke-width="1.4" d="
+        M 270 50
+        C 248 50, 230 65, 230 92
+        C 230 115, 236 138, 246 154
+        C 242 162, 236 168, 232 176
+        C 202 184, 168 205, 145 235
+        C 130 255, 114 295, 100 340
+        C 86 385, 74 440, 65 490
+        C 61 515, 65 532, 74 536
+        C 83 540, 92 526, 98 505
+        C 109 468, 120 418, 131 380
+        C 136 400, 150 445, 158 482
+        C 165 520, 174 554, 184 586
+        C 188 608, 192 654, 190 705
+        C 188 750, 185 802, 178 852
+        C 174 886, 170 908, 163 917
+        C 156 928, 172 935, 192 935
+        C 212 935, 222 924, 226 898
+        C 235 850, 242 788, 246 725
+        C 250 668, 255 618, 270 578
+        C 285 618, 290 668, 294 725
+        C 298 788, 305 850, 314 898
+        C 318 924, 328 935, 348 935
+        C 368 935, 384 928, 377 917
+        C 370 908, 366 886, 362 852
+        C 355 802, 352 750, 350 705
+        C 348 654, 352 608, 356 586
+        C 366 554, 375 520, 382 482
+        C 390 445, 404 400, 409 380
+        C 420 418, 431 468, 442 505
+        C 448 526, 457 540, 466 536
+        C 475 532, 479 515, 475 490
+        C 466 440, 454 385, 440 340
+        C 426 295, 410 255, 395 235
+        C 372 205, 338 184, 308 176
+        C 304 168, 298 162, 294 154
+        C 304 138, 310 115, 310 92
+        C 310 65, 292 50, 270 50 Z" />
+
+      <!-- 3D Contour Wireframe Rings (Chest, Waist, Hips, Arms, Legs) -->
+      <g class="mesh-contour-lines" stroke="#00f0ff" stroke-width="0.65" opacity="0.32" fill="none">
+        <!-- Cranium wireframe -->
+        <ellipse cx="270" cy="92" rx="36" ry="14" />
+        <ellipse cx="270" cy="125" rx="30" ry="10" />
+        <!-- Neck rings -->
+        <ellipse cx="270" cy="180" rx="18" ry="5" />
+        <!-- Chest wireframe ribs -->
+        <ellipse cx="270" cy="235" rx="80" ry="15" />
+        <ellipse cx="270" cy="275" rx="76" ry="14" />
+        <ellipse cx="270" cy="320" rx="70" ry="13" />
+        <!-- Waist rings -->
+        <ellipse cx="270" cy="375" rx="60" ry="12" />
+        <ellipse cx="270" cy="425" rx="68" ry="13" />
+        <!-- Pelvic rings -->
+        <ellipse cx="270" cy="480" rx="76" ry="14" />
+        <!-- Left arm scan rings -->
+        <ellipse cx="120" cy="340" rx="14" ry="7" transform="rotate(-24 120 340)" />
+        <ellipse cx="98" cy="430" rx="12" ry="6" transform="rotate(-20 98 430)" />
+        <ellipse cx="78" cy="510" rx="10" ry="5" transform="rotate(-18 78 510)" />
+        <!-- Right arm scan rings -->
+        <ellipse cx="420" cy="340" rx="14" ry="7" transform="rotate(24 420 340)" />
+        <ellipse cx="442" cy="430" rx="12" ry="6" transform="rotate(20 442 430)" />
+        <ellipse cx="462" cy="510" rx="10" ry="5" transform="rotate(18 462 510)" />
+        <!-- Thigh scan rings -->
+        <ellipse cx="225" cy="610" rx="28" ry="8" />
+        <ellipse cx="315" cy="610" rx="28" ry="8" />
+        <ellipse cx="220" cy="680" rx="22" ry="7" />
+        <ellipse cx="320" cy="680" rx="22" ry="7" />
+        <!-- Calf scan rings -->
+        <ellipse cx="206" cy="760" rx="18" ry="6" />
+        <ellipse cx="334" cy="760" rx="18" ry="6" />
+        <ellipse cx="198" cy="840" rx="15" ry="5" />
+        <ellipse cx="342" cy="840" rx="15" ry="5" />
+      </g>
+    </g>
+
+    <!-- LAYER 2: MUSCULAR ANATOMY (Fine Neon Muscle Fibers) -->
+    <g id="layer-muscle" class="anatomy-layer" pointer-events="none">
+      <!-- Pectoralis Major (Bilateral Neon Fans) -->
+      <path class="muscle-line" stroke="#ff007f" stroke-width="0.9" fill="rgba(255, 0, 127, 0.08)" d="
+        M 268 225 C 235 225, 205 235, 192 258 C 188 280, 202 300, 235 302 C 255 304, 268 290, 268 268 Z" />
+      <path class="muscle-line" stroke="#ff007f" stroke-width="0.9" fill="rgba(255, 0, 127, 0.08)" d="
+        M 272 225 C 305 225, 335 235, 348 258 C 352 280, 338 300, 305 302 C 285 304, 272 290, 272 268 Z" />
+      
+      <!-- Deltoids (Shoulders) -->
+      <path class="muscle-line" stroke="#00f0ff" stroke-width="0.8" fill="none" d="M 185 215 C 162 222, 140 250, 136 282 C 146 288, 162 272, 174 250 Z" />
+      <path class="muscle-line" stroke="#00f0ff" stroke-width="0.8" fill="none" d="M 355 215 C 378 222, 400 250, 404 282 C 394 288, 378 272, 366 250 Z" />
+
+      <!-- Rectus Abdominis (Anatomical Core Segments) -->
+      <g stroke="#ff007f" stroke-width="0.8" fill="rgba(255, 0, 127, 0.06)">
+        <rect x="250" y="312" width="18" height="20" rx="3" />
+        <rect x="272" y="312" width="18" height="20" rx="3" />
+        <rect x="250" y="336" width="18" height="20" rx="3" />
+        <rect x="272" y="336" width="18" height="20" rx="3" />
+        <rect x="252" y="360" width="16" height="22" rx="3" />
+        <rect x="272" y="360" width="16" height="22" rx="3" />
+      </g>
+
+      <!-- Quadriceps & Calves Striations -->
+      <g stroke="#00f0ff" stroke-width="0.8" fill="none" opacity="0.6">
+        <path d="M 212 535 C 198 570, 195 615, 198 660 C 210 675, 232 675, 244 650 C 252 615, 252 570, 248 535 Z" />
+        <path d="M 292 535 C 288 570, 288 615, 296 650 C 308 675, 330 675, 342 660 C 345 615, 342 570, 328 535 Z" />
+        <path d="M 208 710 C 195 738, 192 780, 198 820 C 206 830, 224 830, 230 808 Z" />
+        <path d="M 332 710 C 345 738, 348 780, 342 820 C 334 830, 316 830, 310 808 Z" />
+      </g>
+    </g>
+
+    <!-- LAYER 3: SKELETAL SYSTEM (Vertebral Column, Ribcage, Pelvis in White-Blue) -->
+    <g id="layer-skeleton" class="anatomy-layer" pointer-events="none">
+      <!-- Cranium Skull Contour & Orbits -->
+      <path class="bone-line" stroke="#e0f7fa" stroke-width="1.2" fill="none" d="
+        M 270 62 C 252 62, 238 76, 238 96 C 238 112, 245 126, 252 135 L 254 148 L 286 148 L 288 135 C 295 126, 302 112, 302 96 C 302 76, 288 62, 270 62 Z" />
+      <ellipse cx="256" cy="102" rx="6" ry="5" stroke="#80deea" stroke-width="1" fill="none" />
+      <ellipse cx="284" cy="102" rx="6" ry="5" stroke="#80deea" stroke-width="1" fill="none" />
+
+      <!-- Cervical Vertebrae -->
+      <g stroke="#b2ebf2" stroke-width="1" fill="rgba(178, 235, 242, 0.2)">
+        <rect x="265" y="152" width="10" height="4.5" rx="1.5" />
+        <rect x="264" y="159" width="12" height="4.5" rx="1.5" />
+        <rect x="264" y="166" width="12" height="5" rx="1.5" />
+      </g>
+
+      <!-- Clavicles (Collarbones) -->
+      <path d="M 264 176 Q 220 185 182 196" stroke="#e0f7fa" stroke-width="2" fill="none" />
+      <path d="M 276 176 Q 320 185 358 196" stroke="#e0f7fa" stroke-width="2" fill="none" />
+
+      <!-- Sternum & Rib Cage Arches -->
+      <rect x="267" y="202" width="6" height="75" rx="2" stroke="#e0f7fa" stroke-width="1.2" fill="rgba(224, 247, 250, 0.2)" />
+      <g stroke="#80deea" stroke-width="1.2" fill="none">
+        <path d="M 267 212 C 235 212, 206 226, 198 245 M 273 212 C 305 212, 334 226, 342 245" />
+        <path d="M 267 228 C 230 230, 200 246, 196 268 M 273 228 C 310 230, 340 246, 344 268" />
+        <path d="M 267 245 C 230 248, 200 266, 198 290 M 273 245 C 310 248, 340 266, 342 290" />
+        <path d="M 267 262 C 233 268, 210 286, 208 308 M 273 262 C 307 268, 330 286, 332 308" />
+      </g>
+
+      <!-- Lumbar Vertebrae -->
+      <g stroke="#b2ebf2" stroke-width="1.2" fill="rgba(178, 235, 242, 0.2)">
+        <rect x="263" y="315" width="14" height="6" rx="2" />
+        <rect x="262" y="325" width="16" height="6.5" rx="2" />
+        <rect x="261" y="336" width="18" height="7" rx="2" />
+        <rect x="260" y="348" width="20" height="7.5" rx="2" />
+        <rect x="259" y="360" width="22" height="8" rx="2" />
+      </g>
+
+      <!-- Pelvis Girdle (Iliac Wings & Sacrum) -->
+      <path stroke="#e0f7fa" stroke-width="1.5" fill="rgba(224, 247, 250, 0.12)" d="
+        M 270 380
+        C 242 380, 214 396, 202 430
+        C 196 452, 208 468, 226 468
+        C 242 468, 254 452, 260 430
+        L 270 412
+        L 280 430
+        C 286 452, 298 468, 314 468
+        C 332 468, 344 452, 338 430
+        C 326 396, 298 380, 270 380 Z" />
+
+      <!-- Femurs & Knee Patellae -->
+      <line x1="226" y1="468" x2="218" y2="670" stroke="#e0f7fa" stroke-width="5" stroke-linecap="round" />
+      <line x1="314" y1="468" x2="322" y2="670" stroke="#e0f7fa" stroke-width="5" stroke-linecap="round" />
+      <circle cx="218" cy="676" r="6" stroke="#80deea" stroke-width="1.5" fill="rgba(128, 222, 234, 0.3)" />
+      <circle cx="322" cy="676" r="6" stroke="#80deea" stroke-width="1.5" fill="rgba(128, 222, 234, 0.3)" />
+
+      <!-- Tibia & Fibula -->
+      <line x1="218" y1="688" x2="206" y2="885" stroke="#e0f7fa" stroke-width="4.5" stroke-linecap="round" />
+      <line x1="212" y1="694" x2="198" y2="880" stroke="#80deea" stroke-width="2" stroke-linecap="round" />
+      <line x1="322" y1="688" x2="334" y2="885" stroke="#e0f7fa" stroke-width="4.5" stroke-linecap="round" />
+      <line x1="328" y1="694" x2="342" y2="880" stroke="#80deea" stroke-width="2" stroke-linecap="round" />
+    </g>
+
+    <!-- LAYER 4: ORGANS WITH DISTINCT NEON GLOW COLORS -->
+    <g id="layer-organs" class="anatomy-layer" pointer-events="none">
+      
+      <!-- 1. VIOLET BRAIN (Cerebral Gyri Folds & Cerebellum) -->
+      <g id="neon-brain-graphic" filter="url(#glow-violet)">
+        <path fill="url(#grad-brain-violet)" stroke="#b388ff" stroke-width="1.2" d="
+          M 270 64
+          C 252 64, 240 76, 240 95
+          C 240 108, 246 118, 254 122
+          C 258 124, 264 125, 270 125
+          C 276 125, 282 124, 286 122
+          C 294 118, 300 108, 300 95
+          C 300 76, 288 64, 270 64 Z" />
+        <!-- Intricate Gyri Folds -->
+        <path stroke="#d1c4e9" stroke-width="1.1" fill="none" d="
+          M 258 78 Q 266 84 256 94 Q 264 102 258 112
+          M 282 78 Q 274 84 284 94 Q 276 102 282 112
+          M 270 68 L 270 118" />
+      </g>
+
+      <!-- 2. OPTIC PATHWAYS & EYES (Cyan Spheres) -->
+      <g id="neon-eyes-graphic" filter="url(#glow-cyan)">
+        <circle cx="256" cy="102" r="5" fill="#e0f7fa" stroke="#00f0ff" stroke-width="1.2" />
+        <circle cx="256" cy="102" r="2" fill="#00e5ff" />
+        <circle cx="284" cy="102" r="5" fill="#e0f7fa" stroke="#00f0ff" stroke-width="1.2" />
+        <circle cx="284" cy="102" r="2" fill="#00e5ff" />
+        <path d="M 256 106 Q 270 116 270 124 M 284 106 Q 270 116 270 124" stroke="#00f0ff" stroke-width="0.9" fill="none" opacity="0.7" />
+      </g>
+
+      <!-- 3. CYAN-BLUE LUNGS WITH INTRICATE BRONCHIAL BRANCHES -->
+      <g id="neon-lungs-graphic" filter="url(#glow-cyan)">
+        <!-- Trachea Arborization Tree -->
+        <path d="M 270 178 L 270 205 M 270 205 L 248 224 M 270 205 L 292 224" stroke="#64ffda" stroke-width="2" fill="none" />
+        <!-- Left Lung Lobes (x=205 to 256) -->
+        <path fill="url(#grad-lungs-cyan)" stroke="#00e5ff" stroke-width="1.3" d="
+          M 260 212
+          C 240 212, 214 232, 210 262
+          C 206 292, 212 328, 226 345
+          C 240 358, 252 352, 258 340
+          C 262 328, 260 292, 260 258 Z" />
+        <!-- Right Lung Lobes (x=284 to 335, notched for heart) -->
+        <path fill="url(#grad-lungs-cyan)" stroke="#00e5ff" stroke-width="1.3" d="
+          M 280 212
+          C 300 212, 326 232, 330 262
+          C 334 292, 328 328, 314 345
+          C 300 358, 288 352, 282 340
+          C 278 328, 280 292, 280 258 Z" />
+        <!-- Bronchial Fine Branching Lines Inside Lobes -->
+        <g stroke="#e0f7fa" stroke-width="0.8" fill="none" opacity="0.75">
+          <path d="M 248 224 Q 236 242 228 265 M 248 224 Q 242 250 240 278" />
+          <path d="M 292 224 Q 304 242 312 265 M 292 224 Q 298 250 300 278" />
+        </g>
+      </g>
+
+      <!-- 4. HOT PINK / MAGENTA HEART WITH CORONARY VESSELS -->
+      <g id="neon-heart-graphic" class="heart-beat-anim" filter="url(#glow-magenta)">
+        <!-- Anatomical Cardiac Silhouette (Left Precordial Axis) -->
+        <path fill="url(#grad-cardiac-glow)" stroke="#ff007f" stroke-width="1.5" d="
+          M 275 260
+          C 268 245, 250 242, 242 252
+          C 230 265, 230 286, 242 304
+          C 252 318, 270 338, 276 348
+          C 282 338, 300 318, 310 304
+          C 322 286, 322 265, 310 252
+          C 302 242, 284 245, 277 260 Z" transform="rotate(-6 276 295)" />
+        <!-- Aortic Arch & Major Vessels -->
+        <path d="
+          M 272 248 C 270 228, 288 222, 296 235 L 297 248
+          M 280 225 L 280 215
+          M 288 224 L 290 214" stroke="#ff4081" stroke-width="2.2" fill="none" />
+        <!-- Fine Coronary Tracery -->
+        <path d="M 276 275 Q 268 290 264 308 M 278 280 Q 288 295 294 312" stroke="#ffffff" stroke-width="0.9" fill="none" opacity="0.8" />
+      </g>
+
+      <!-- 5. PINK-ORANGE DIGESTIVE SYSTEM (Stomach C-Curve & Intestines) -->
+      <g id="neon-gut-graphic" filter="url(#glow-orange)">
+        <!-- Stomach C-Curve -->
+        <path fill="url(#grad-gut-amber)" stroke="#ff7043" stroke-width="1.4" d="
+          M 278 355
+          C 255 355, 240 372, 244 392
+          C 248 412, 270 420, 284 414
+          C 295 410, 300 392, 300 378
+          C 300 362, 290 355, 278 355 Z" />
+        <!-- Small & Large Intestines Fine Line Loops -->
+        <path fill="none" stroke="#ff9800" stroke-width="1.3" d="
+          M 258 420
+          C 240 426, 236 448, 248 464
+          C 260 478, 288 472, 298 460
+          C 308 448, 318 466, 306 484
+          C 294 502, 260 500, 250 514
+          C 240 528, 266 538, 280 535
+          C 294 532, 305 520, 302 502
+          C 300 484, 280 480, 278 466
+          C 275 452, 260 442, 260 430 Z" />
+      </g>
+
+      <!-- 6. LYMPHATIC IMMUNE NODES (Violet/Magenta Nodes) -->
+      <g id="neon-immune-graphic" filter="url(#glow-violet)">
+        <circle cx="245" cy="172" r="3.2" fill="#ab47bc" stroke="#e1bee7" stroke-width="0.8" />
+        <circle cx="295" cy="172" r="3.2" fill="#ab47bc" stroke="#e1bee7" stroke-width="0.8" />
+        <circle cx="188" cy="240" r="3.5" fill="#ab47bc" stroke="#e1bee7" stroke-width="0.8" />
+        <circle cx="352" cy="240" r="3.5" fill="#ab47bc" stroke="#e1bee7" stroke-width="0.8" />
+        <circle cx="240" cy="510" r="3.2" fill="#ab47bc" stroke="#e1bee7" stroke-width="0.8" />
+        <circle cx="300" cy="510" r="3.2" fill="#ab47bc" stroke="#e1bee7" stroke-width="0.8" />
+      </g>
+    </g>
+
+    <!-- ==========================================================
+         INTERACTIVE CLICKABLE BODY REGIONS (Named SVG Groups)
+         STACKING ORDER:
+         - Bottom: Immune/Skin contour, Muscles (legs)
+         - Middle: Spine, Lungs (bilateral lobes), Gut (below heart)
+         - Top: Brain, Eyes (generous hit target), Heart (generous hit target on VERY TOP)
+         ========================================================== -->
+    <g class="interactive-regions-layer" pointer-events="auto">
+      
+      <!-- 1. BOTTOM: Immune & Skin (Peripheral Dermal Contour, Neck & Shoulders) -->
+      <g id="region-immune" class="interactive-region status-nodata" data-region="immune" tabindex="0" role="button" aria-label="Skin and Immune System">
+        <path class="generous-hit-target skin-hit-path" d="
+          M 270 50
+          C 248 50, 230 65, 230 92
+          C 230 115, 236 138, 246 154
+          C 242 162, 236 168, 232 176
+          C 202 184, 168 205, 145 235
+          C 130 255, 114 295, 100 340
+          C 86 385, 74 440, 65 490
+          C 61 515, 65 532, 74 536
+          C 83 540, 92 526, 98 505
+          C 109 468, 120 418, 131 380
+          C 136 400, 150 445, 158 482
+          C 165 520, 174 554, 184 586
+          C 188 608, 192 654, 190 705
+          C 188 750, 185 802, 178 852
+          C 174 886, 170 908, 163 917
+          C 156 928, 172 935, 192 935
+          C 212 935, 222 924, 226 898
+          C 235 850, 242 788, 246 725
+          C 250 668, 255 618, 270 578
+          C 285 618, 290 668, 294 725
+          C 298 788, 305 850, 314 898
+          C 318 924, 328 935, 348 935
+          C 368 935, 384 928, 377 917
+          C 370 908, 366 886, 362 852
+          C 355 802, 352 750, 350 705
+          C 348 654, 352 608, 356 586
+          C 366 554, 375 520, 382 482
+          C 390 445, 404 400, 409 380
+          C 420 418, 431 468, 442 505
+          C 448 526, 457 540, 466 536
+          C 475 532, 479 515, 475 490
+          C 466 440, 454 385, 440 340
+          C 426 295, 410 255, 395 235
+          C 372 205, 338 184, 308 176
+          C 304 168, 298 162, 294 154
+          C 304 138, 310 115, 310 92
+          C 310 65, 292 50, 270 50 Z" />
+        <ellipse cx="270" cy="350" rx="95" ry="140" class="region-pulse-ring" />
+      </g>
+
+      <!-- 2. Muscles & Legs (Quadriceps & Calves) -->
+      <g id="region-muscles" class="interactive-region status-nodata" data-region="muscles" tabindex="0" role="button" aria-label="Musculoskeletal and Legs System">
+        <path class="generous-hit-target" d="M 188 520 C 180 570, 182 630, 188 680 C 190 740, 182 820, 176 865 C 170 894, 206 902, 226 870 C 238 820, 245 750, 250 680 C 252 625, 254 565, 252 520 Z" />
+        <path class="generous-hit-target" d="M 288 520 C 286 565, 288 625, 290 680 C 295 750, 302 820, 314 870 C 334 902, 370 894, 364 865 C 358 820, 350 740, 352 680 C 358 630, 360 570, 352 520 Z" />
+        <ellipse cx="270" cy="700" rx="85" ry="160" class="region-pulse-ring" />
+      </g>
+
+      <!-- 3. Spine & Skeletal Axis (Midline Column & Pelvic Girdle) -->
+      <g id="region-spine" class="interactive-region status-nodata" data-region="spine" tabindex="0" role="button" aria-label="Spine and Skeletal System">
+        <rect x="262" y="150" width="16" height="230" rx="5" class="generous-hit-target" />
+        <path class="generous-hit-target" d="M 270 380 C 242 380, 214 396, 202 430 C 196 452, 208 468, 226 468 C 242 468, 254 452, 260 430 L 270 412 L 280 430 C 286 452, 298 468, 314 468 C 332 468, 344 452, 338 430 C 326 396, 298 380, 270 380 Z" />
+        <rect x="262" y="150" width="16" height="230" rx="6" class="region-pulse-ring" />
+      </g>
+
+      <!-- 4. Lungs & Respiration (Bilateral Lobes with Central Clearance for Heart) -->
+      <g id="region-lungs" class="interactive-region status-nodata" data-region="lungs" tabindex="0" role="button" aria-label="Respiratory and Lungs System">
+        <!-- Left Lung Lobe Target (x=205 to 258) -->
+        <path class="generous-hit-target" d="
+          M 260 212
+          C 240 212, 214 232, 210 262
+          C 206 292, 212 328, 226 345
+          C 240 358, 252 352, 258 340
+          C 262 328, 260 292, 260 258 Z" />
+        <!-- Right Lung Lobe Target (x=282 to 335) -->
+        <path class="generous-hit-target" d="
+          M 280 212
+          C 300 212, 326 232, 330 262
+          C 334 292, 328 328, 314 345
+          C 300 358, 288 352, 282 340
+          C 278 328, 280 292, 280 258 Z" />
+        <ellipse cx="270" cy="275" rx="65" ry="60" class="region-pulse-ring" />
+      </g>
+
+      <!-- 5. Gut & Metabolic (Stomach & Intestines, strictly y=350 to 520, Below Heart) -->
+      <g id="region-gut" class="interactive-region status-nodata" data-region="gut" tabindex="0" role="button" aria-label="Digestive and Metabolic System">
+        <path class="generous-hit-target" d="
+          M 278 355
+          C 246 355, 238 390, 244 430
+          C 248 480, 255 525, 276 528
+          C 298 525, 306 480, 306 430
+          C 306 390, 298 355, 278 355 Z" />
+        <ellipse cx="270" cy="440" rx="46" ry="80" class="region-pulse-ring" />
+      </g>
+
+      <!-- 6. Brain & Mood (Cranial Apex, y=55 to 125) -->
+      <g id="region-brain" class="interactive-region status-nodata" data-region="brain" tabindex="0" role="button" aria-label="Brain and Mood System">
+        <ellipse cx="270" cy="90" rx="34" ry="30" class="generous-hit-target" />
+        <circle cx="270" cy="90" r="34" class="region-pulse-ring" />
+      </g>
+
+      <!-- 7. Eyes (SANS) - Rendered on TOP of Brain with Generous Hit Target -->
+      <g id="region-eyes" class="interactive-region status-nodata" data-region="eyes" tabindex="0" role="button" aria-label="Eyes and Visual Acuity System">
+        <ellipse cx="270" cy="102" rx="32" ry="16" class="generous-hit-target" />
+        <ellipse cx="270" cy="102" rx="26" ry="13" class="region-pulse-ring" />
+      </g>
+
+      <!-- 8. Heart & Cardiovascular - Rendered on VERY TOP of Lungs, Spine, and Gut! -->
+      <g id="region-heart" class="interactive-region status-nodata" data-region="heart" tabindex="0" role="button" aria-label="Cardiovascular and Heart System">
+        <circle cx="276" cy="295" r="38" class="generous-hit-target" />
+        <path class="cardiac-shape-target" d="
+          M 275 260
+          C 268 245, 250 242, 242 252
+          C 230 265, 230 286, 242 304
+          C 252 318, 270 338, 276 348
+          C 282 338, 300 318, 310 304
+          C 322 286, 322 265, 310 252
+          C 302 242, 284 245, 277 260 Z" transform="rotate(-6 276 295)" />
+        <circle cx="276" cy="295" r="40" class="region-pulse-ring" />
+      </g>
+    </g>
+
+    <!-- SVG CALLOUT PINS & LEADER LINES -->
+    <g class="svg-pins-layer" pointer-events="none">
+      <!-- Pin: Brain -->
+      <g class="pin-group" data-pin="brain" pointer-events="auto">
+        <line x1="270" y1="90" x2="130" y2="90" class="pin-leader" />
+        <circle cx="270" cy="90" r="3.5" class="pin-target" />
+        <circle cx="130" cy="90" r="6" class="pin-badge" id="pin-badge-brain" />
+        <text x="116" y="94" text-anchor="end" class="pin-label">BRAIN & MOOD</text>
+      </g>
+
+      <!-- Pin: Eyes -->
+      <g class="pin-group" data-pin="eyes" pointer-events="auto">
+        <line x1="284" y1="102" x2="410" y2="102" class="pin-leader" />
+        <circle cx="284" cy="102" r="3.5" class="pin-target" />
+        <circle cx="410" cy="102" r="6" class="pin-badge" id="pin-badge-eyes" />
+        <text x="424" y="106" text-anchor="start" class="pin-label">EYES (SANS)</text>
+      </g>
+
+      <!-- Pin: Heart -->
+      <g class="pin-group" data-pin="heart" pointer-events="auto">
+        <line x1="276" y1="295" x2="130" y2="295" class="pin-leader" />
+        <circle cx="276" cy="295" r="3.5" class="pin-target" />
+        <circle cx="130" cy="295" r="6" class="pin-badge" id="pin-badge-heart" />
+        <text x="116" y="299" text-anchor="end" class="pin-label">CARDIOVASCULAR</text>
+      </g>
+
+      <!-- Pin: Lungs -->
+      <g class="pin-group" data-pin="lungs" pointer-events="auto">
+        <line x1="310" y1="275" x2="410" y2="275" class="pin-leader" />
+        <circle cx="310" cy="275" r="3.5" class="pin-target" />
+        <circle cx="410" cy="275" r="6" class="pin-badge" id="pin-badge-lungs" />
+        <text x="424" y="279" text-anchor="start" class="pin-label">RESPIRATORY</text>
+      </g>
+
+      <!-- Pin: Spine -->
+      <g class="pin-group" data-pin="spine" pointer-events="auto">
+        <line x1="270" y1="365" x2="130" y2="365" class="pin-leader" />
+        <circle cx="270" cy="365" r="3.5" class="pin-target" />
+        <circle cx="130" cy="365" r="6" class="pin-badge" id="pin-badge-spine" />
+        <text x="116" y="369" text-anchor="end" class="pin-label">SPINE & BONES</text>
+      </g>
+
+      <!-- Pin: Gut -->
+      <g class="pin-group" data-pin="gut" pointer-events="auto">
+        <line x1="278" y1="430" x2="410" y2="430" class="pin-leader" />
+        <circle cx="278" cy="430" r="3.5" class="pin-target" />
+        <circle cx="410" cy="430" r="6" class="pin-badge" id="pin-badge-gut" />
+        <text x="424" y="434" text-anchor="start" class="pin-label">METABOLIC & GUT</text>
+      </g>
+
+      <!-- Pin: Muscles -->
+      <g class="pin-group" data-pin="muscles" pointer-events="auto">
+        <line x1="320" y1="730" x2="410" y2="730" class="pin-leader" />
+        <circle cx="320" cy="730" r="3.5" class="pin-target" />
+        <circle cx="410" cy="730" r="6" class="pin-badge" id="pin-badge-muscles" />
+        <text x="424" y="734" text-anchor="start" class="pin-label">MUSCLES & LEGS</text>
+      </g>
+
+      <!-- Pin: Immune -->
+      <g class="pin-group" data-pin="immune" pointer-events="auto">
+        <line x1="188" y1="240" x2="130" y2="200" class="pin-leader" />
+        <circle cx="188" cy="240" r="3.5" class="pin-target" />
+        <circle cx="130" cy="200" r="6" class="pin-badge" id="pin-badge-immune" />
+        <text x="116" y="204" text-anchor="end" class="pin-label">IMMUNE & SKIN</text>
+      </g>
+    </g>
+  </g>
+
+</svg>
+
+          <!-- Interactive Tip Overlay -->
+          <div class="stage-footer-tip">
+            <span class="tip-icon">👆</span> Tap any body region to view telemetry, log real vitals, or review medical history
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT HUD COLUMN: VITAL SYSTEMS OVERVIEW CARDS (BOTTOM 4) -->
+      <aside class="systems-column systems-column-right">
+        <div class="column-title">METABOLIC & STRUCTURAL</div>
+
+        <!-- Region Card: Gut -->
+        <article class="system-summary-card status-nodata" data-region="gut" tabindex="0" role="button" aria-label="Open Metabolic and Gut system">
+          <div class="card-status-indicator" id="card-dot-gut"></div>
+          <div class="card-main">
+            <div class="card-header">
+              <span class="card-icon">🥗</span>
+              <span class="card-name">Metabolic & Gut</span>
+              <span class="card-status-pill" id="card-pill-gut">NO DATA</span>
+            </div>
+            <div class="card-vital-values">
+              <div class="vital-item">
+                <span class="v-label">Glucose:</span>
+                <span class="v-val" id="vital-gut-glucose">--</span>
+              </div>
+              <div class="vital-item">
+                <span class="v-label">Hydration:</span>
+                <span class="v-val" id="vital-gut-hydration">--</span>
+              </div>
+            </div>
+            <div class="card-hazard-tags">
+              <span class="hazard-badge" title="Gravity Fields">G</span>
+              <span class="hazard-badge" title="Hostile Closed Environment">E</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Region Card: Spine -->
+        <article class="system-summary-card status-nodata" data-region="spine" tabindex="0" role="button" aria-label="Open Spine and Bone Density system">
+          <div class="card-status-indicator" id="card-dot-spine"></div>
+          <div class="card-main">
+            <div class="card-header">
+              <span class="card-icon">🦴</span>
+              <span class="card-name">Spine & Bone</span>
+              <span class="card-status-pill" id="card-pill-spine">NO DATA</span>
+            </div>
+            <div class="card-vital-values">
+              <div class="vital-item">
+                <span class="v-label">Exercise:</span>
+                <span class="v-val" id="vital-spine-exercise">--</span>
+              </div>
+              <div class="vital-item">
+                <span class="v-label">Pain:</span>
+                <span class="v-val" id="vital-spine-pain">--</span>
+              </div>
+            </div>
+            <div class="card-hazard-tags">
+              <span class="hazard-badge" title="Gravity Fields">G</span>
+              <span class="hazard-badge" title="Radiation Hazard">R</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Region Card: Muscles -->
+        <article class="system-summary-card status-nodata" data-region="muscles" tabindex="0" role="button" aria-label="Open Musculoskeletal system">
+          <div class="card-status-indicator" id="card-dot-muscles"></div>
+          <div class="card-main">
+            <div class="card-header">
+              <span class="card-icon">🦵</span>
+              <span class="card-name">Muscles & Legs</span>
+              <span class="card-status-pill" id="card-pill-muscles">NO DATA</span>
+            </div>
+            <div class="card-vital-values">
+              <div class="vital-item">
+                <span class="v-label">Exercise:</span>
+                <span class="v-val" id="vital-muscles-exercise">--</span>
+              </div>
+              <div class="vital-item">
+                <span class="v-label">Weakness:</span>
+                <span class="v-val" id="vital-muscles-weakness">--</span>
+              </div>
+            </div>
+            <div class="card-hazard-tags">
+              <span class="hazard-badge" title="Gravity Fields">G</span>
+              <span class="hazard-badge" title="Distance from Earth">D</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Region Card: Skin / Immune -->
+        <article class="system-summary-card status-nodata" data-region="immune" tabindex="0" role="button" aria-label="Open Immune and Skin system">
+          <div class="card-status-indicator" id="card-dot-immune"></div>
+          <div class="card-main">
+            <div class="card-header">
+              <span class="card-icon">🛡️</span>
+              <span class="card-name">Immune & Skin</span>
+              <span class="card-status-pill" id="card-pill-immune">NO DATA</span>
+            </div>
+            <div class="card-vital-values">
+              <div class="vital-item">
+                <span class="v-label">Temp:</span>
+                <span class="v-val" id="vital-immune-temp">--</span>
+              </div>
+              <div class="vital-item">
+                <span class="v-label">Barrier:</span>
+                <span class="v-val" id="vital-immune-skin">--</span>
+              </div>
+            </div>
+            <div class="card-hazard-tags">
+              <span class="hazard-badge" title="Radiation Hazard">R</span>
+              <span class="hazard-badge" title="Isolation Hazard">I</span>
+            </div>
+          </div>
+        </article>
+      </aside>
+    </main>
+
+    <!-- SLIDE-IN SIDE PANEL (DRAWER) -->
+    <div class="drawer-backdrop" id="drawer-backdrop"></div>
+    <aside class="side-panel-drawer" id="side-panel-drawer" aria-labelledby="drawer-title" aria-hidden="true">
+      
+      <!-- Drawer Header -->
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <div class="drawer-system-icon" id="drawer-icon">🫀</div>
+          <div>
+            <div class="drawer-eyebrow" id="drawer-eyebrow">ASTRONAUT TELEMETRY MODULE</div>
+            <h2 class="drawer-title" id="drawer-title">Cardiovascular System</h2>
+            <p class="drawer-subtitle" id="drawer-subtitle">Heart Rate, Blood Pressure & Orthostatic Stability</p>
+          </div>
+        </div>
+        <div class="drawer-header-actions">
+          <span class="drawer-status-pill" id="drawer-status-badge">NO DATA</span>
+          <button class="drawer-close-btn" id="drawer-close-btn" aria-label="Close side panel">✕</button>
+        </div>
+      </div>
+
+      <!-- Drawer Content Navigation Tabs -->
+      <nav class="drawer-tabs" role="tablist">
+        <button class="tab-btn active" data-tab="tab-vitals" role="tab" aria-selected="true">
+          📊 Vitals & Diagnosis
+        </button>
+        <button class="tab-btn" data-tab="tab-measure" role="tab" aria-selected="false">
+          ✍️ Log Measurement
+        </button>
+        <button class="tab-btn" data-tab="tab-history" role="tab" aria-selected="false">
+          📜 History Log
+        </button>
+        <button class="tab-btn" data-tab="tab-hazards" role="tab" aria-selected="false">
+          🌌 NASA 5 Hazards
+        </button>
+      </nav>
+
+      <!-- TAB 1: VITALS, CURRENT STATUS & COMPARATIVE DELTA -->
+      <section class="drawer-tab-content active" id="tab-vitals" role="tabpanel">
+        
+        <!-- 1. What this body part does (Simple language) -->
+        <div class="drawer-card body-function-card">
+          <div class="card-subhead">PHYSIOLOGICAL ROLE & SPACE IMPACT</div>
+          <p id="drawer-function-text" class="function-text">
+            The heart pumps blood through the body. In microgravity, fluid redistributes upward, decreasing blood volume and cardiac workload.
+          </p>
+        </div>
+
+        <!-- 4. Status Result & Comparative Delta Card -->
+        <div class="drawer-card status-result-card" id="drawer-status-result-card">
+          <div class="status-result-header">
+            <span class="card-subhead">LATEST TELEMETRY READING</span>
+            <span class="clinical-grade" id="drawer-clinical-grade">NO DATA YET</span>
+          </div>
+          <div class="status-summary-metric" id="drawer-status-metric-display">
+            <!-- Injected dynamically with latest measurement & delta comparison -->
+          </div>
+          <div class="delta-comparison-badge" id="drawer-delta-comparison">
+            <!-- Shows: "Pulse up 12 bpm since previous log" -->
+          </div>
+          <div class="reference-range-box" id="drawer-reference-range-box">
+            <!-- Reference range & source citation injected dynamically -->
+          </div>
+        </div>
+
+        <!-- Critical Alert Warning Box (When status is critical) -->
+        <div class="drawer-critical-alert" id="drawer-critical-alert" style="display: none;">
+          <span class="alert-icon">🚨</span>
+          <div>
+            <strong>CRITICAL CLINICAL ADVISORY</strong>
+            <p id="drawer-critical-text">Values exceed safe spaceflight parameters. Immediate triage protocol activated.</p>
+          </div>
+        </div>
+
+        <!-- Recommended Actions & Ground Escalation -->
+        <div class="drawer-card actions-card">
+          <div class="actions-header">
+            <span class="card-subhead">RECOMMENDED COUNTERMEASURES</span>
+            <h4>Standard Operational Protocols</h4>
+          </div>
+          <ul class="countermeasures-list" id="drawer-actions-list">
+            <!-- Dynamically populated countermeasure checklists -->
+          </ul>
+        </div>
+
+        <!-- Escalation Guidance with Comm Delay Awareness -->
+        <div class="drawer-card escalation-card">
+          <div class="escalation-header">
+            <span class="escalation-icon">📡</span>
+            <div>
+              <div class="card-subhead">GROUND CLINICAL ESCALATION</div>
+              <h4>When to Contact Flight Surgeon</h4>
+            </div>
+          </div>
+          <div class="comm-latency-notice" id="drawer-escalation-comm-notice">
+            <!-- Injected dynamic comm delay note based on active mission -->
+          </div>
+          <div class="escalation-body" id="drawer-escalation-guidance">
+            <!-- Detailed flight surgeon threshold guidance -->
+          </div>
+          <button class="btn-escalate" id="btn-request-consult">
+            Transmit Medical Consult Packet to Mission Control
+          </button>
+        </div>
+      </section>
+
+      <!-- TAB 2: TAKE MEASUREMENT FORM (All Fields Optional + Validation) -->
+      <section class="drawer-tab-content" id="tab-measure" role="tabpanel">
+        
+        <!-- Step-by-step instructions in simple language -->
+        <div class="drawer-card guide-card">
+          <div class="guide-header">
+            <span class="guide-icon">👨‍🚀</span>
+            <div>
+              <div class="card-subhead">MICROGRAVITY MEASUREMENT PROCEDURE</div>
+              <h4>How to Measure in Space</h4>
+              <p class="guide-sub">Clear zero-g protocol for non-medical crewmembers</p>
+            </div>
+          </div>
+          <ol class="step-guide-list" id="drawer-measurement-guide">
+            <!-- Injected step-by-step instructions -->
+          </ol>
+        </div>
+
+        <!-- Measurement Input Form -->
+        <div class="drawer-card form-card">
+          <div class="card-subhead">DATA ENTRY · LOG MEASUREMENT</div>
+          <p class="form-optional-notice">All fields are optional. Log only what you measured right now.</p>
+          
+          <form id="measurement-form" class="measurement-form" novalidate>
+            <div class="form-inputs-grid" id="drawer-form-inputs">
+              <!-- Dynamically generated inputs with units and typical ranges -->
+            </div>
+
+            <!-- Validation Feedback Box -->
+            <div class="form-error-banner" id="form-error-banner" style="display: none;"></div>
+
+            <div class="form-action-bar">
+              <button type="submit" class="btn-primary" id="btn-save-measurement">
+                💾 Save Reading to Telemetry (+50 XP)
+              </button>
+            </div>
+            <div class="form-help-text">
+              Measurements are validated against NASA physiological limits and saved in local mission storage.
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- TAB 3: HISTORY LOG (Chart.js Trend & Delete Table) -->
+      <section class="drawer-tab-content" id="tab-history" role="tabpanel">
+        
+        <!-- Interactive Chart of Historical Readings -->
+        <div class="drawer-card chart-card">
+          <div class="chart-header-row">
+            <div>
+              <span class="card-subhead">MISSION TIMELINE TREND</span>
+              <h3 class="chart-title" id="drawer-chart-metric-title">Biometric History</h3>
+            </div>
+            <div class="chart-metric-picker" id="chart-metric-picker">
+              <!-- Metric toggle buttons -->
+            </div>
+          </div>
+          <div class="chart-canvas-wrapper" id="chart-canvas-wrapper">
+            <canvas id="region-trend-chart"></canvas>
+            <div class="chart-empty-state" id="chart-empty-state" style="display: none;">
+              <span>📈</span>
+              <p><strong>No readings yet.</strong> Take your first measurement to plot your trend.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scrollable History Data Table with Delete Option -->
+        <div class="drawer-card history-table-card">
+          <div class="card-subhead">ALL RECORDED READINGS FOR THIS SYSTEM</div>
+          <div class="table-responsive">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Recorded Values</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="drawer-history-tbody">
+                <!-- Dynamically populated rows with 🗑️ Delete button -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: NASA 5 HAZARDS DEEP-DIVE -->
+      <section class="drawer-tab-content" id="tab-hazards" role="tabpanel">
+        <div class="drawer-card intro-card">
+          <div class="card-subhead">NASA SPACE HEALTH FRAMEWORK</div>
+          <h4>Why Spaceflight Affects This System</h4>
+          <p>
+            NASA classifies human spaceflight risks into 5 primary hazards: 
+            <strong>R</strong>adiation, <strong>I</strong>solation, <strong>D</strong>istance from Earth, 
+            <strong>G</strong>ravity fields, and <strong>H</strong>ostile closed environments.
+          </p>
+        </div>
+
+        <div class="env-emphasis-callout" id="drawer-env-emphasis">
+          <!-- Dynamically highlights how active mission environment alters hazards -->
+        </div>
+
+        <div class="hazard-cards-list" id="drawer-hazard-list">
+          <!-- Populated dynamically with affected NASA hazards -->
+        </div>
+      </section>
+
+    </aside>
+
+    <!-- BADGES & ACHIEVEMENTS MODAL -->
+    <div class="modal-overlay" id="badges-modal-overlay" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-labelledby="badges-modal-title">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <span class="modal-icon">🏆</span>
+            <div>
+              <h3 id="badges-modal-title">Astronaut Mission Badges</h3>
+              <p>Earned through real self-assessments and countermeasure adherence</p>
+            </div>
+          </div>
+          <button class="modal-close-btn" id="badges-modal-close" aria-label="Close badges dialog">✕</button>
+        </div>
+        <div class="badges-grid" id="badges-modal-grid">
+          <!-- Populated from data.js BADGES -->
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION CONTAINER -->
+    <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+    <!-- MANDATORY NASA SPACE APPS FOOTER & CITATIONS -->
+    <footer class="app-footer">
+      <div class="footer-notice">
+        <span class="notice-badge">PROTOTYPE NOTICE</span>
+        <p>
+          <strong>Prototype for decision support. Uses simulated data and general reference ranges. Not a medical diagnosis.</strong>
+        </p>
+      </div>
+      <div class="footer-meta">
+        <span>NASA Space Apps Challenge</span>
+        <span>•</span>
+        <span>NASA-STD-3001 Human-System Standard</span>
+        <span>•</span>
+        <span>Procedural SVG Anatomy Model (Open-source vector standard, no external copyrighted assets)</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Scripts -->
+  <script src="data.js"></script>
+  <script src="body-figure.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
